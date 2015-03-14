@@ -22,6 +22,7 @@ Keyboard commands:
 import curses.wrapper, curses.ascii
 import formatter, htmllib, locale, os, StringIO, re, readline, tempfile, zipfile
 import base64, webbrowser
+import math
 import sys
 
 from BeautifulSoup import BeautifulSoup
@@ -42,6 +43,9 @@ locale.setlocale(locale.LC_ALL, 'en_US.utf-8')
 
 basedir = ''
 
+titles=[]
+current_chapter = 0
+
 def run(screen, program, *args):
     curses.nocbreak()
     screen.keypad(0)
@@ -57,7 +61,7 @@ def run(screen, program, *args):
 def open_image(screen, name, s):
     ''' show images with PIL and fabulous '''
     if not images:
-        screen.addstr(0, 0, "missing PIL or fabulous", curses.A_REVERSE)
+        screen.addstr(0, 1, "missing PIL or fabulous", curses.A_REVERSE)
         return
 
     ext = os.path.splitext(name)[1]
@@ -156,9 +160,10 @@ def list_chaps(screen, chaps, start, length):
     for i, (title, src) in enumerate(chaps[start:start+length]):
         try:
             if start == 0:
-                screen.addstr(i, 0, '      {0}'.format(title), curses.A_BOLD)
+                screen.addstr(i, 1, ' {0}'.format(title), curses.A_BOLD)
             else:
-                screen.addstr(i, 0, '{0:-5} {1}'.format(start, title))
+                screen.addstr(i, 1, '{0:-4} {1}'.format(start, title))
+                titles.append(title)
         except:
             pass
         start += 1
@@ -206,7 +211,11 @@ def curses_epub(screen, fl):
             cursor_row = maxy - 1
 
         len_chaps = list_chaps(screen, chaps, start, maxy)
-        screen.move(cursor_row, 0)
+        
+        for progress in range(0, maxy):
+            screen.addch(progress,0, ' ')
+
+        screen.move(cursor_row, 1)
         ch = screen.getch()
 
         # quit
@@ -249,12 +258,13 @@ def curses_epub(screen, fl):
         # to chapter
         elif ch in [curses.ascii.HT, curses.KEY_RIGHT, curses.KEY_LEFT]:
             if chaps[start + cursor_row][1]:
+                current_capter = start
                 html = fl.read(chaps[start + cursor_row][1])
                 soup = BeautifulSoup(html)
                 chap = textify(
                     unicode(soup.find('body')).encode('utf-8'),
                     img_size=screen.getmaxyx(),
-                    maxcol=screen.getmaxyx()[1]
+                    maxcol=screen.getmaxyx()[1] - 1
                 ).split('\n')
             else:
                 chap = ''
@@ -270,12 +280,29 @@ def curses_epub(screen, fl):
                     chaps_pos[start + cursor_row] + maxy
                 ]):
                     try:
-                        screen.addstr(i, 0, line)
+                        screen.addstr(i + 1, 1, line)
                         mch = re.search('\[img="([^"]+)" "([^"]*)"\]', line)
                         if mch:
                             images.append(mch.group(1))
                     except:
                         pass
+
+                #Chapter Progress Status
+                chaplen = len(chap)    
+                chaplen = float(chaplen)    
+                currentstatus = int(math.floor((chaps_pos[start + cursor_row] / chaplen) * maxy))
+                for progress in range(0, currentstatus):  
+                    screen.addch(progress,0, '|', curses.A_REVERSE)    
+                screen.addch(currentstatus,0, 'V', curses.A_REVERSE) 
+
+                #Chapter Title
+                current_title = "[Chapter: %s]" % titles[cursor_row - 1]
+                if len(current_title) < (maxx - 3):
+                    screen.addstr(0,(maxx/2)-(len(current_title)/2), current_title, curses.A_REVERSE)
+                else:
+                    current_title = current_title[:maxx - 5]                    
+                    screen.addstr(0,2, current_title, curses.A_REVERSE)
+                    screen.addstr(0,maxx - 3, "...", curses.A_REVERSE)
                 screen.refresh()
                 ch = screen.getch()
 
@@ -328,7 +355,7 @@ def curses_epub(screen, fl):
                             for img in images:
                                 err = open_image(screen, img, fl.read(img))
                                 if err:
-                                    screen.addstr(0, 0, err, curses.A_REVERSE)
+                                    screen.addstr(0, 1, err, curses.A_REVERSE)
 
                         # edit html
                         elif chr(ch) == 'e':
